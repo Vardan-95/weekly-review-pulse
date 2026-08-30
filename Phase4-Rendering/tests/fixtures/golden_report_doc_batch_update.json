@@ -1,0 +1,33 @@
+{
+  "requests": [
+    {
+      "insertText": {
+        "location": {
+          "index": 1
+        },
+        "text": "Groww — Week of 2026-08-24 – 2026-08-30 (ISO 2026-W35)\nApp performance & bugs\nLag and crashes during trading hours; login/session timeouts.\n“the app freezes exactly when the market opens, very frustrating”\nAction: Scale infra during market hours; improve crash visibility.\nCustomer support friction\nSlow responses; unresolved tickets.\n“support takes days to reply and doesn't solve the issue”\nAction: Expected response time in-app; ticket status tracking.\nWho this helps\nProduct: Prioritize roadmap from recurring themes\nSupport: Spot repeating complaints and quality issues\nLeadership: Fast health snapshot tied to customer voice\n"
+      }
+    },
+    {
+      "updateParagraphStyle": {
+        "range": {
+          "startIndex": 1,
+          "endIndex": 55
+        },
+        "paragraphStyle": {
+          "namedStyleType": "HEADING_2"
+        },
+        "fields": "namedStyleType"
+      }
+    },
+    {
+      "createNamedRange": {
+        "name": "pulse-section-groww-2026-W35",
+        "range": {
+          "startIndex": 1,
+          "endIndex": 55
+        }
+      }
+    }
+  ]
+}

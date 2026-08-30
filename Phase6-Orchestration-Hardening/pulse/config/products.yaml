@@ -1,0 +1,65 @@
+# Product configuration — Architecture.md §3 (`config/products.yaml`).
+# Schema/loader: Phase1-Foundations/pulse/config/loader.py (reused via
+# pulse/integration/phases.py, not duplicated here).
+#
+# Every product below has real, verified values (2026-08-30): App Store ids
+# and Play Store packages confirmed live against the real iTunes RSS feed
+# and Play Store scraper; doc_id values are real Google Docs created via
+# the Docs MCP server's create_doc tool. Porter (logistics/intercity
+# transport) was added at the user's explicit request, alongside the
+# original problem-statement product list (INDMoney, Groww, PowerUp Money,
+# Wealth Monitor, Kuvera) — the pipeline itself is product-category-
+# agnostic, so this isn't a fintech-only restriction in practice.
+#
+# stakeholders default to the project owner's own address for every
+# product for now — update per product before any real send to other
+# recipients.
+
+products:
+  - name: Groww
+    app_store_id: "1404871703"
+    play_store_package: "com.nextbillion.groww"
+    doc_id: "1QXu-EE1eSiUVZZ3WUlk9ikAZ4gCD6T5-Kr_-SoFhrHM"
+    doc_title: "Weekly Review Pulse — Groww"
+    stakeholders:
+      - vardansaxena20@gmail.com
+
+  - name: INDMoney
+    app_store_id: "1450178837"
+    play_store_package: "in.indwealth"
+    doc_id: "14gvBsoXCi7izHy4TcbWIHGJ4FgacWkBlyOPg5Gxb5oA"
+    doc_title: "Weekly Review Pulse — INDMoney"
+    stakeholders:
+      - vardansaxena20@gmail.com
+
+  - name: PowerUp Money
+    app_store_id: "6470202376"
+    play_store_package: "money.powerup.uni.invest.app"
+    doc_id: "123kvPDyF-rI2VjGY_S8xdgwyTAtKwUQ3YozWkDaZSYs"
+    doc_title: "Weekly Review Pulse — PowerUp Money"
+    stakeholders:
+      - vardansaxena20@gmail.com
+
+  - name: Wealth Monitor
+    app_store_id: "6741582045"
+    play_store_package: "com.wealthmonitor"
+    doc_id: "10OTZ_0GJLth8hZTMw3_sD20uiuQkjS0ZOmDW0ntoxS0"
+    doc_title: "Weekly Review Pulse — Wealth Monitor"
+    stakeholders:
+      - vardansaxena20@gmail.com
+
+  - name: Kuvera
+    app_store_id: "1329701793"
+    play_store_package: "com.gooogle.android.kuvera.app"
+    doc_id: "1DqG-Bzri4Zabjpf7beOInKit_4u6kb_q1I_KEV0_m-4"
+    doc_title: "Weekly Review Pulse — Kuvera"
+    stakeholders:
+      - vardansaxena20@gmail.com
+
+  - name: Porter
+    app_store_id: "1109398410"
+    play_store_package: "com.theporter.android.customerapp"
+    doc_id: "1AXhSLT09lExkubeEI4XDx8RMZEcXonJSRfuGHypqYxM"
+    doc_title: "Weekly Review Pulse — Porter"
+    stakeholders:
+      - vardansaxena20@gmail.com

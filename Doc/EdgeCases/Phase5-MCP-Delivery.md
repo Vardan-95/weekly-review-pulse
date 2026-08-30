@@ -1,0 +1,16 @@
+# Edge Cases — Phase 5: MCP Delivery & Idempotency
+
+Companion to: [ImplementationPlan.md § Phase 5](../ImplementationPlan.md#phase-5--mcp-delivery--idempotency)
+
+| # | Scenario | Expected handling |
+|---|---|---|
+| 1 | Target Doc ID in config no longer exists (deleted or moved) | Docs MCP call fails with a clear, distinguishable error; ledger records `FAILED` with that reason, not a generic MCP error |
+| 2 | A human manually edited or removed a week's heading text in the Doc between runs | The content-search idempotency check (revised from a named-range lookup — see Phase5-MCP-Delivery/README.md) finds no match and proceeds to append — a real risk of an unintended duplicate section; documented known limitation, don't hand-edit the Doc's pulse sections |
+| 3 | Two runs for the same `(product, iso_week)` are triggered concurrently (e.g. manual + scheduled overlap) | Only one should win the anchor creation; the other's `batchUpdate`/`createNamedRange` call should fail or be caught by a subsequent anchor check before it writes — verify no double-section is possible even under this race |
+| 4 | Gmail MCP `send` call succeeds at the API level, but the message later bounces (invalid stakeholder address) | Logged as a delivery-layer concern distinct from an MCP failure — the run itself is `SUCCEEDED` since the MCP call succeeded; bounce handling is out of this phase's scope but must not be misreported as a pipeline failure |
+| 5 | Docs MCP server returns success but the batchUpdate payload silently exceeds a size/complexity limit and content is truncated by the API | Detected via a post-write read-back/verification step where feasible; otherwise documented as a residual risk requiring monitoring |
+| 6 | OAuth token held by the MCP server expires or is revoked mid-run | MCP call fails with an auth-shaped error; ledger records it distinctly from a network/transient error so an operator knows to re-authorize the MCP server, not just retry |
+| 7 | Operator passes `--force` without `--replace-doc-section` on a week that already has a Doc section | Doc leg is skipped (heading text found) even though `--force` was passed. `--replace-doc-section` itself is not implemented yet (raises `NotImplementedError`) since it needs precise text-range deletion this server doesn't confirm it can do — so today, `--force` alone is effectively the *only* behavior, and it always skips |
+| 8 | Gmail MCP server is unreachable at run start (not mid-run) | Doc delivery may still succeed independently; the run should not be all-or-nothing across the two MCP servers unless explicitly required — partial success is recorded accurately in the ledger |
+| 9 | The `[[pulse-run-key:...]]` body marker collides for two different reports (e.g. a bug in `run_key` hashing) — revised from a header, since the chosen server's send tool doesn't support custom headers | Would cause a false-positive idempotency skip; the `run_key` construction (product + iso_week + content hash) should be tested for uniqueness across a range of realistic report variations |
+| 10 | MCP server is up but returns a slow/hanging response | Bounded timeout applied to every MCP call (not just failure retries), so a hang doesn't block the entire weekly run indefinitely |

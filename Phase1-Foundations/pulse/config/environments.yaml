@@ -1,0 +1,27 @@
+# Environment configuration — Architecture.md §3 / §9 / §10.
+#
+# email_mode: "draft" (default, dev/staging) or "send" (production only,
+# promoted deliberately per Architecture.md §5.2 and the draft->send
+# checklist in ImplementationPlan.md Phase 6).
+#
+# max_cost_usd_per_run is optional; see EdgeCases/Phase1-Foundations.md #7 —
+# if omitted, the loader applies a documented default (see config/loader.py).
+
+environments:
+  dev:
+    email_mode: draft
+    ingestion_window_weeks: 8
+    max_tokens_per_run: 200000
+    max_cost_usd_per_run: 2.00
+
+  staging:
+    email_mode: draft
+    ingestion_window_weeks: 12
+    max_tokens_per_run: 200000
+    max_cost_usd_per_run: 2.00
+
+  production:
+    email_mode: send
+    ingestion_window_weeks: 12
+    max_tokens_per_run: 300000
+    max_cost_usd_per_run: 5.00

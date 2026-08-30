@@ -1,0 +1,17 @@
+# Test suite only needs pytest + PyYAML (products.yaml/environments.yaml
+# loading, via Phase 1's config loader, reused through pulse/integration/).
+pytest>=7.4
+PyYAML>=6.0
+
+# Everything else the full pipeline can call is lazily imported by whichever
+# Phase 1-5 module owns it, and only required for a REAL (non-test) run:
+#   - requests                  (Phase 2 App Store ingestion)
+#   - google-play-scraper       (Phase 2 Play Store ingestion)
+#   - sentence-transformers     (Phase 3 embeddings)
+#   - umap-learn, hdbscan, numpy (Phase 3 clustering)
+#   - groq (default) or anthropic (Phase 3 summarization - GroqLLMClient is
+#     the orchestrator's default real LLM backend; free-tier friendly)
+#   - mcp                       (Phase 5 real MCP client)
+# Install these (and set up google_workspace_mcp — see
+# local-mcp-server/README equivalent in Phase5-MCP-Delivery/README.md) only
+# when actually running `pulse run` against real products, not for tests.

@@ -1,0 +1,25 @@
+# Environment configuration — Architecture.md §3 / §9 / §10.
+#
+# email_mode: "draft" never calls the Gmail MCP server at all (see
+# Phase5-MCP-Delivery/pulse/delivery/email_delivery.py); "send" is real
+# email, gated by pulse/promotion.py's pre-run check plus the manual
+# PROMOTION_CHECKLIST.md sign-off.
+
+environments:
+  dev:
+    email_mode: draft
+    ingestion_window_weeks: 8
+    max_tokens_per_run: 200000
+    max_cost_usd_per_run: 2.00
+
+  staging:
+    email_mode: draft
+    ingestion_window_weeks: 12
+    max_tokens_per_run: 200000
+    max_cost_usd_per_run: 2.00
+
+  production:
+    email_mode: send
+    ingestion_window_weeks: 12
+    max_tokens_per_run: 300000
+    max_cost_usd_per_run: 5.00

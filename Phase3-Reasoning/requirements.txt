@@ -1,0 +1,17 @@
+# pytest is all that's needed to run the test suite — every real-run
+# dependency below is lazily imported and only required outside tests.
+pytest>=7.4
+
+# Real embedding model (analysis/embeddings.py::SentenceTransformerEmbeddingClient)
+sentence-transformers>=2.7
+
+# Real clustering (analysis/clustering.py::UmapHdbscanClusterer)
+numpy>=1.26
+umap-learn>=0.5
+hdbscan>=0.8.33
+
+# Real LLM summarization (analysis/summarize.py). Anthropic (paid) or Groq
+# (free-tier friendly) - only whichever LLMClient you actually use needs to
+# be installed.
+anthropic>=0.40
+groq>=0.11

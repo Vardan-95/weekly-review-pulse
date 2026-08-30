@@ -1,0 +1,13 @@
+# pytest is all that's needed to run the test suite — the real MCP client
+# dependency below is lazily imported inside mcp/host_adapter.py and only
+# required for real (non-test) runs.
+pytest>=7.4
+
+# Real MCP client (mcp/host_adapter.py) — the official MCP Python SDK.
+mcp>=1.2
+
+# Also required for a real run: the google_workspace_mcp server itself,
+# installed/runnable separately (not a pip dependency of this package) —
+# see https://github.com/taylorwilsdon/google_workspace_mcp for install
+# instructions (typically `uvx workspace-mcp` or `pip install
+# workspace-mcp-server`).

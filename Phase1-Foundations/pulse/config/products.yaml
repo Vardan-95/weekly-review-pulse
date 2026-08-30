@@ -1,0 +1,48 @@
+# Product configuration — Architecture.md §3 (`config/products.yaml`).
+#
+# Placeholder values below (anything starting with REPLACE_) must be filled
+# in with real App Store ids, Play Store package names, Google Doc ids, and
+# stakeholder addresses before Phase 2 (ingestion) or Phase 5 (delivery) can
+# run against real data. Phase 1 only needs these fields to be *present and
+# well-formed* so the loader/validator and CLI plumbing can be exercised.
+
+products:
+  - name: INDMoney
+    app_store_id: "REPLACE_WITH_APP_STORE_ID"
+    play_store_package: "REPLACE_WITH_PLAY_STORE_PACKAGE"
+    doc_id: "REPLACE_WITH_GOOGLE_DOC_ID"
+    doc_title: "Weekly Review Pulse — INDMoney"
+    stakeholders:
+      - REPLACE_WITH_STAKEHOLDER_EMAIL
+
+  - name: Groww
+    app_store_id: "REPLACE_WITH_APP_STORE_ID"
+    play_store_package: "REPLACE_WITH_PLAY_STORE_PACKAGE"
+    doc_id: "REPLACE_WITH_GOOGLE_DOC_ID"
+    doc_title: "Weekly Review Pulse — Groww"
+    stakeholders:
+      - REPLACE_WITH_STAKEHOLDER_EMAIL
+
+  - name: PowerUp Money
+    app_store_id: "REPLACE_WITH_APP_STORE_ID"
+    play_store_package: "REPLACE_WITH_PLAY_STORE_PACKAGE"
+    doc_id: "REPLACE_WITH_GOOGLE_DOC_ID"
+    doc_title: "Weekly Review Pulse — PowerUp Money"
+    stakeholders:
+      - REPLACE_WITH_STAKEHOLDER_EMAIL
+
+  - name: Wealth Monitor
+    app_store_id: "REPLACE_WITH_APP_STORE_ID"
+    play_store_package: "REPLACE_WITH_PLAY_STORE_PACKAGE"
+    doc_id: "REPLACE_WITH_GOOGLE_DOC_ID"
+    doc_title: "Weekly Review Pulse — Wealth Monitor"
+    stakeholders:
+      - REPLACE_WITH_STAKEHOLDER_EMAIL
+
+  - name: Kuvera
+    app_store_id: "REPLACE_WITH_APP_STORE_ID"
+    play_store_package: "REPLACE_WITH_PLAY_STORE_PACKAGE"
+    doc_id: "REPLACE_WITH_GOOGLE_DOC_ID"
+    doc_title: "Weekly Review Pulse — Kuvera"
+    stakeholders:
+      - REPLACE_WITH_STAKEHOLDER_EMAIL

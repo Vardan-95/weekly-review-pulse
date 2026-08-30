@@ -1,0 +1,25 @@
+# Repo-wide safety net - each phase folder and local-mcp-server/ also has
+# its own .gitignore; this covers the same ground for anything at the
+# root level and as defense-in-depth.
+
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+
+# Runtime state (SQLite ledgers/review stores, scheduled-task logs) -
+# local, regenerable, and the ledger/review databases can contain scrubbed
+# review text - never committed.
+data/
+*.sqlite3
+
+# Real secrets - Google OAuth client id/secret, Groq API key. This file is
+# gitignored here AND in local-mcp-server/.gitignore; both must keep
+# excluding it.
+local-mcp-server/set-credentials.local.ps1
+local-mcp-server/*.json
+
+# OS/editor noise
+.DS_Store
+Thumbs.db

@@ -1,0 +1,3 @@
+# Never commit real credentials — this whole folder holds local secrets.
+set-credentials.local.ps1
+*.json
