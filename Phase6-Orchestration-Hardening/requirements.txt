@@ -12,6 +12,7 @@ PyYAML>=6.0
 #   - groq (default) or anthropic (Phase 3 summarization - GroqLLMClient is
 #     the orchestrator's default real LLM backend; free-tier friendly)
 #   - mcp                       (Phase 5 real MCP client)
+#   - matplotlib                (Phase 6 CXO report chart rendering, pulse/charts.py)
 # Install these (and set up google_workspace_mcp — see
 # local-mcp-server/README equivalent in Phase5-MCP-Delivery/README.md) only
 # when actually running `pulse run` against real products, not for tests.

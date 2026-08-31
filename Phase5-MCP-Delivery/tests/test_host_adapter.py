@@ -29,10 +29,12 @@ def test_server_command_is_configurable():
 def test_default_server_command_is_uvx_workspace_mcp():
     """Verified against a real local run (2026-08-30): --single-user is
     required for this project's single-account use case, and --tools docs
-    gmail (not --tool-tier core, which loads all 12 services and requests
-    unnecessarily broad OAuth scopes) restricts to what's actually used."""
+    gmail drive (not --tool-tier core, which loads all 12 services and
+    requests unnecessarily broad OAuth scopes) restricts to what's
+    actually used. drive was added 2026-08-31 for CXO-report chart image
+    uploads - confirmed live it doesn't trigger a new OAuth consent."""
     caller = GoogleWorkspaceMCPToolCaller()
-    assert caller._server_command == ["uvx", "workspace-mcp", "--single-user", "--tools", "docs", "gmail"]
+    assert caller._server_command == ["uvx", "workspace-mcp", "--single-user", "--tools", "docs", "gmail", "drive"]
 
 
 def test_looks_like_error_text_catches_validation_errors():

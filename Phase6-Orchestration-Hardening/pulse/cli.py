@@ -11,12 +11,14 @@ from pathlib import Path
 from .integration import phases as p
 from .observability.logging_setup import configure_logging
 from .orchestrator.run import InFlightRunError, PipelineClients, PipelineError, run_pipeline
+from .quant_store import QuantSnapshotStore
 
 _BASE_DIR = Path(__file__).resolve().parent
 _PRODUCTS_PATH = _BASE_DIR / "config" / "products.yaml"
 _ENVIRONMENTS_PATH = _BASE_DIR / "config" / "environments.yaml"
 _DEFAULT_DB_PATH = _BASE_DIR.parent / "data" / "ledger.sqlite3"
 _DEFAULT_REVIEW_DB_PATH = _BASE_DIR.parent / "data" / "reviews.sqlite3"
+_DEFAULT_QUANT_DB_PATH = _BASE_DIR.parent / "data" / "quant_snapshots.sqlite3"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -25,6 +27,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--db", default=str(_DEFAULT_DB_PATH), help="Path to the run ledger SQLite file")
     parser.add_argument(
         "--review-db", default=str(_DEFAULT_REVIEW_DB_PATH), help="Path to the scrubbed-review SQLite file"
+    )
+    parser.add_argument(
+        "--quant-db", default=str(_DEFAULT_QUANT_DB_PATH),
+        help="Path to the quantitative-snapshot SQLite file (used for week-over-week comparisons)",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -85,11 +91,12 @@ def _run_or_backfill(args: argparse.Namespace, iso_week: str) -> int:
     product = p.get_product(products, args.product)
     env = p.get_environment(environments, args.env)
 
-    with p.RunLedger(args.db) as ledger, p.ReviewStore(args.review_db) as review_store:
+    with p.RunLedger(args.db) as ledger, p.ReviewStore(args.review_db) as review_store, \
+            QuantSnapshotStore(args.quant_db) as quant_store:
         try:
             summary = run_pipeline(
                 product, env, iso_week, ledger, review_store,
-                clients=PipelineClients(), force=args.force,
+                clients=PipelineClients(), force=args.force, quant_store=quant_store,
             )
         except InFlightRunError as exc:
             print(f"error: {exc}", file=sys.stderr)

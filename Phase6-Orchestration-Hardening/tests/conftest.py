@@ -135,9 +135,14 @@ class FakeMCPToolCaller:
         self.sent_emails: list[dict] = []
         self.calls: list[tuple[str, str, dict]] = []
         self.style_operations: list[dict] = []
+        self.inserted_images: list[dict] = []
+        self.drive_files: dict[str, str] = {}
+        self.shared_file_ids: list[str] = []
         # Mirrors the real server's behavior (verified 2026-08-30): the doc
         # body always ends in a permanent empty terminating paragraph.
         self._paragraphs: list[dict] = [{"start_index": 1, "end_index": 2, "text_preview": "\n"}]
+        self._tables: list[dict] = []
+        self._cell_index_registry: dict[int, tuple[int, int, int]] = {}
 
     def call_tool(self, server: str, tool: str, arguments: dict) -> str:
         self.calls.append((server, tool, dict(arguments)))
@@ -151,10 +156,13 @@ class FakeMCPToolCaller:
             )
         if tool == "batch_update_doc":
             for op in arguments["operations"]:
-                if op["type"] == "insert_text":
-                    assert op["end_of_segment"] is True
+                if op["type"] == "insert_text" and op.get("end_of_segment"):
                     self._insert_text(op["text"])
                     self.doc_content += op["text"]
+                elif op["type"] == "insert_text":
+                    self._insert_cell_text(op["index"], op["text"])
+                elif op["type"] == "insert_table":
+                    self._insert_table(op["rows"], op["columns"])
                 else:
                     self.style_operations.append(op)
             return "Successfully updated document."
@@ -162,8 +170,16 @@ class FakeMCPToolCaller:
             body = {
                 "title": "Test Doc",
                 "total_length": self._paragraphs[-1]["end_index"],
-                "statistics": {"paragraphs": len(self._paragraphs)},
+                "statistics": {"paragraphs": len(self._paragraphs), "tables": len(self._tables)},
                 "elements": [{"type": "paragraph", **p} for p in self._paragraphs],
+                "tables": [
+                    {
+                        "position": {"start": t["start_index"], "end": t["end_index"]},
+                        "dimensions": {"rows": t["rows"], "columns": t["columns"]},
+                        "preview": t["cells"],
+                    }
+                    for t in self._tables
+                ],
                 "section_breaks": [],
                 "tabs": [{"title": "Tab 1", "tab_id": "t.0"}],
             }
@@ -172,6 +188,26 @@ class FakeMCPToolCaller:
                 f"{json.dumps(body)}\n\n"
                 f"Link: https://docs.google.com/document/d/{arguments['document_id']}/edit"
             )
+        if tool == "debug_table_structure":
+            table = self._tables[arguments["table_index"]]
+            cells = [[{"insertion_index": idx} for idx in row] for row in table["cell_indices"]]
+            return f"Table debug info:\n\n{json.dumps({'cells': cells})}"
+        if tool == "create_drive_file":
+            file_id = f"fake-drive-file-{len(self.drive_files)}"
+            self.drive_files[file_id] = arguments.get("base64_content", "")
+            return f"Successfully created file '{arguments['file_name']}' (ID: {file_id}) in folder 'root' for fake@example.com."
+        if tool == "set_drive_file_permissions":
+            self.shared_file_ids.append(arguments["file_id"])
+            return f"Permission settings updated for '{arguments['file_id']}'"
+        if tool == "insert_doc_image":
+            file_id = arguments["image_source"]
+            self.inserted_images.append(
+                {"file_id": file_id, "index": arguments["index"], "width": arguments["width"], "height": arguments["height"]}
+            )
+            trailing = self._paragraphs[-1]
+            trailing["start_index"] += 1
+            trailing["end_index"] += 1
+            return f"Inserted Drive file {file_id} (size: {arguments['width']}x{arguments['height']} points) at index {arguments['index']}"
         if tool == "search_gmail_messages":
             marker = arguments["query"].strip('"')
             for email in self.sent_emails:
@@ -205,6 +241,45 @@ class FakeMCPToolCaller:
         trailing["start_index"] += shift
         trailing["end_index"] += shift
         self._paragraphs[-1:-1] = new_paragraphs
+
+    def _insert_table(self, rows: int, columns: int) -> dict:
+        """Mirrors insert_table_at_end()'s real quirk (VERIFIED live,
+        2026-08-31): the new table lands immediately before the doc's
+        trailing empty paragraph, which shifts forward by the table's
+        footprint - same pattern as _insert_text, just for a table instead
+        of paragraphs."""
+        trailing = self._paragraphs[-1]
+        insert_at = trailing["start_index"]
+        table_ordinal = len(self._tables)
+        footprint = max(10, rows * columns * 5)  # arbitrary but big enough to never collide with cell indices below
+
+        cell_indices = [[0] * columns for _ in range(rows)]
+        idx = insert_at + 1
+        for r in range(rows):
+            for c in range(columns):
+                cell_indices[r][c] = idx
+                self._cell_index_registry[idx] = (table_ordinal, r, c)
+                idx += 1
+
+        table = {
+            "start_index": insert_at,
+            "end_index": insert_at + footprint,
+            "rows": rows,
+            "columns": columns,
+            "cells": [["" for _ in range(columns)] for _ in range(rows)],
+            "cell_indices": cell_indices,
+        }
+        self._tables.append(table)
+
+        trailing["start_index"] += footprint
+        trailing["end_index"] += footprint
+        return table
+
+    def _insert_cell_text(self, index: int, text: str) -> None:
+        if index not in self._cell_index_registry:
+            raise AssertionError(f"insert_text at explicit index {index} does not match any known table cell")
+        table_ordinal, row, col = self._cell_index_registry[index]
+        self._tables[table_ordinal]["cells"][row][col] = text
 
 
 class FailNTimesThenDelegate:

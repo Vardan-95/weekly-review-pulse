@@ -71,15 +71,21 @@ def test_happy_path_full_run_succeeds_end_to_end(tmp_path, iso_week_and_dates):
     assert f"{product.name} — Week of" in mcp_caller.doc_content
     assert len(mcp_caller.sent_emails) == 1
 
-    # The cosmetic follow-up pass (doc_styling.py) actually ran: the
-    # heading got HEADING_2, the theme name got HEADING_3, the quote got
-    # italicized, and a real named range now exists for the heading.
+    # The cosmetic heading pass (doc_styling.py) actually ran, and a real
+    # named range now exists for the section heading.
     style_types = [op["type"] for op in mcp_caller.style_operations]
-    assert style_types.count("update_paragraph_style") == 2  # heading + theme name
-    assert "format_text" in style_types  # the italicized quote
+    assert style_types.count("update_paragraph_style") >= 2  # heading, plus every CXO report sub-heading
+    assert "format_text" in style_types  # the italicized quote, preserved from the original qualitative report
     named_range_ops = [op for op in mcp_caller.style_operations if op["type"] == "create_named_range"]
     assert len(named_range_ops) == 1
     assert named_range_ops[0]["name"] == f"pulse-section-{product.name.lower()}-{iso_week}"
+
+    # The CXO report's real additions actually got delivered: charts
+    # (uploaded then inserted as images) and at least the theme x
+    # sentiment table (a real Docs table with shaded cells).
+    assert len(mcp_caller.inserted_images) >= 3  # sentiment donut, star bar, theme bar (at minimum)
+    assert len(mcp_caller.drive_files) == len(mcp_caller.inserted_images)  # every image was uploaded before insertion
+    assert any(op["type"] == "update_table_cell_style" for op in mcp_caller.style_operations)
 
 
 def test_rerun_without_force_is_a_pure_ledger_level_noop(tmp_path, iso_week_and_dates):

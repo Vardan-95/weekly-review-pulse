@@ -57,12 +57,20 @@ from .protocol import MCPAuthError, MCPError, MCPToolCaller, MCPTransientError
 # Verified against a real local run (2026-08-30): `uvx workspace-mcp` alone
 # starts in the server's default multi-user/session-mapping mode, not the
 # single-user mode this project's single-account use case needs.
-# `--tools docs gmail` (rather than `--tool-tier core`, which loads all 12
-# Workspace services and requests OAuth scopes for all of them, including
-# Drive delete access this project never needs) restricts both the loaded
-# tools and the OAuth consent screen to just what Architecture.md §7 calls
-# for: Docs and Gmail.
-DEFAULT_SERVER_COMMAND = ["uvx", "workspace-mcp", "--single-user", "--tools", "docs", "gmail"]
+# `--tools docs gmail drive` (rather than `--tool-tier core`, which loads
+# all 12 Workspace services and requests OAuth scopes for all of them)
+# restricts both the loaded tools and the OAuth consent screen to just
+# what's actually used. `drive` was added 2026-08-31 for the CXO report's
+# chart images: Docs' real insertInlineImage request only accepts a
+# publicly-fetchable image, and the practical way to get a matplotlib-
+# generated chart into a Doc is upload-to-Drive, share it, then insert by
+# Drive file id (see docs_client.py's upload_image/insert_image) - Drive
+# tools are the only way to do that upload step. Confirmed live: adding
+# `drive` here did NOT trigger a new OAuth consent, since the underlying
+# token already carried Drive scope (the Docs tools always needed it
+# internally for file metadata) - only the *tool* surface grew, not the
+# grant.
+DEFAULT_SERVER_COMMAND = ["uvx", "workspace-mcp", "--single-user", "--tools", "docs", "gmail", "drive"]
 
 
 class GoogleWorkspaceMCPToolCaller:

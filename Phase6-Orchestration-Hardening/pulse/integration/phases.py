@@ -64,12 +64,15 @@ embed_texts = embeddings_mod.embed_texts
 SentenceTransformerEmbeddingClient = embeddings_mod.SentenceTransformerEmbeddingClient
 rank_clusters = clustering_mod.rank_clusters
 ClusteringResult = clustering_mod.ClusteringResult
+ClusterRanking = clustering_mod.ClusterRanking
 MIN_REVIEWS_FOR_THEMING = clustering_mod.MIN_REVIEWS_FOR_THEMING
 UmapHdbscanClusterer = clustering_mod.UmapHdbscanClusterer
 summarize_clusters = summarize_mod.summarize_clusters
 AnthropicLLMClient = summarize_mod.AnthropicLLMClient
 GroqLLMClient = summarize_mod.GroqLLMClient
 LLMResponse = summarize_mod.LLMResponse
+ThemeSummary = summarize_mod.ThemeSummary
+SummarizeResult = summarize_mod.SummarizeResult
 
 # --- Phase 4: Report Rendering ----------------------------------------------
 report_mod = load_phase_module("phase4", "report")
@@ -99,6 +102,7 @@ compute_run_key = idempotency_mod.compute_run_key
 compute_report_content_hash = idempotency_mod.compute_report_content_hash
 DocsMCPClient = docs_client_mod.DocsMCPClient
 ParagraphInfo = docs_client_mod.ParagraphInfo
+TableInfo = docs_client_mod.TableInfo
 DocStructure = docs_client_mod.DocStructure
 GmailMCPClient = gmail_client_mod.GmailMCPClient
 deliver_doc_section = doc_delivery_mod.deliver_doc_section

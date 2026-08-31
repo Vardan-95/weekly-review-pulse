@@ -21,7 +21,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from .. import doc_styling, prepublish, promotion, render_bridge
+from .. import cxo_report, doc_styling, prepublish, promotion, quant_analysis, render_bridge
+from .. import quant_store as quant_store_module
 from ..integration import phases as p
 from ..observability.logging_setup import get_logger
 
@@ -99,6 +100,14 @@ def _ingestion_window(env, week_monday, week_sunday) -> tuple:
     return window_start, window_end
 
 
+def _previous_iso_week(iso_week: str) -> str:
+    year, week = p.parse_iso_week(iso_week)
+    monday, _ = p.iso_week_bounds(year, week)
+    previous_monday = monday - timedelta(days=7)
+    prev_year, prev_week, _ = previous_monday.isocalendar()
+    return p.format_iso_week(prev_year, prev_week)
+
+
 def _build_report(product, iso_week, week_monday, week_sunday, summarize_result):
     themes = tuple(
         p.Theme(
@@ -131,7 +140,15 @@ def run_pipeline(
     *,
     clients: PipelineClients | None = None,
     force: bool = False,
+    quant_store: Any = None,
 ) -> RunSummary:
+    """`quant_store` persists this run's quantitative snapshot for next
+    week's real week-over-week comparison (see quant_store.py) - defaults
+    to an in-memory store (no cross-run history, so WoW sections just
+    don't appear) when not given, which is fine for isolated test runs;
+    real CLI use passes a real on-disk one."""
+    if quant_store is None:
+        quant_store = quant_store_module.QuantSnapshotStore(":memory:")
     logger = get_logger()
     clients = clients or PipelineClients()
     log_ctx = {"product": product.name, "iso_week": iso_week, "env": env.name}
@@ -244,20 +261,44 @@ def run_pipeline(
         )
 
         report = _build_report(product, iso_week, week_monday, week_sunday, summarize_result)
-        doc_section = render_bridge.build_doc_section(report)
+        heading_text = render_bridge.heading_text(report)
         email_payload = p.build_email(report)
 
-        prepublish.check_rendered_text(doc_section.text, label="doc section")
+        # --- quantitative layer (2026-08-31): real numbers computed from
+        # the same scrubbed_reviews/clustering_result/summarize_result the
+        # qualitative report already uses - see quant_analysis.py.
+        quant = quant_analysis.compute_quant_snapshot(scrubbed_reviews, clustering_result, summarize_result)
+        previous_iso_week = _previous_iso_week(iso_week)
+        previous_snapshot = quant_store.get(product.name, previous_iso_week)
+        wow = None
+        if previous_snapshot is not None:
+            wow = quant_analysis.compute_wow_comparison(
+                quant,
+                previous_iso_week=previous_iso_week,
+                previous_total_reviews=previous_snapshot.snapshot.total_reviews,
+                previous_sentiment_negative_pct=previous_snapshot.snapshot.sentiment.negative_pct,
+                previous_sentiment_positive_pct=previous_snapshot.snapshot.sentiment.positive_pct,
+                previous_theme_pcts={t.theme_name: t.pct_of_total for t in previous_snapshot.snapshot.theme_metrics},
+            )
+        report_blocks = cxo_report.build_report_blocks(report, quant, current_iso_week=iso_week, wow=wow)
+        for block in report_blocks:
+            if isinstance(block, cxo_report.TextBlock):
+                prepublish.check_rendered_text("\n".join(block.lines), label="cxo report text block")
 
         mcp_caller = clients.mcp_tool_caller or p.build_tool_caller()
         docs_client = p.DocsMCPClient(mcp_caller)
+        # The heading alone is what idempotency is keyed on (same check as
+        # before: does this week's heading text already appear in the
+        # Doc?) - only the heading is appended here; the rest of the CXO
+        # report body follows below, once we know this is a genuinely new
+        # section and not a skip.
         doc_result = p.deliver_doc_section(
             docs_client,
             doc_id=product.doc_id,
             product=product.name,
             iso_week=iso_week,
-            heading_text=render_bridge.heading_text(report),
-            build_section_text=lambda: doc_section.text,
+            heading_text=heading_text,
+            build_section_text=lambda: heading_text + "\n",
         )
         ledger.update_doc(
             run_id,
@@ -268,14 +309,15 @@ def run_pipeline(
         logger.info("doc_delivery_complete", extra={**log_ctx, "run_id": run_id, "status": doc_result.status})
 
         if doc_result.status == "SUCCEEDED":
-            # Best-effort cosmetic pass (heading/theme styling, a real named
-            # range) - never fatal, see doc_styling.py's module docstring.
+            # Best-effort cosmetic pass on the heading itself (HEADING_2, a
+            # real named range) - never fatal, see doc_styling.py's module
+            # docstring.
             try:
                 style_result = doc_styling.style_appended_section(
                     docs_client,
                     doc_id=product.doc_id,
-                    lines=doc_section.lines,
-                    named_range=doc_section.named_range_name,
+                    lines=(render_bridge.SectionLine(heading_text, render_bridge.ROLE_HEADING),),
+                    named_range=doc_result.named_range,
                 )
                 logger.info(
                     "doc_styling_complete",
@@ -285,6 +327,18 @@ def run_pipeline(
                 logger.warning(
                     "doc_styling_failed", extra={**log_ctx, "run_id": run_id, "error": str(style_exc)}
                 )
+
+            # The CXO report body (KPIs, charts, tables, the existing
+            # qualitative analysis, takeaways) - unlike styling above, a
+            # failure here is NOT swallowed: it's real, undelivered content
+            # for a week the heading now claims is done, so it needs to
+            # surface as a real run failure (same as the original single-
+            # append design's error handling - this isn't a new risk class,
+            # just more MCP round trips for the same "must actually land"
+            # requirement).
+            cxo_report.deliver_cxo_report_body(docs_client, product.doc_id, report_blocks)
+            logger.info("cxo_report_body_delivered", extra={**log_ctx, "run_id": run_id, "block_count": len(report_blocks)})
+            quant_store.save(product.name, iso_week, quant, created_at=_now_utc().isoformat())
 
         final_html = email_payload.html_body.replace(p.DEEP_LINK_PLACEHOLDER, doc_result.deep_link)
         final_text = email_payload.text_body.replace(p.DEEP_LINK_PLACEHOLDER, doc_result.deep_link)
@@ -331,8 +385,8 @@ def run_pipeline(
         email_message_id=final_record.email_message_id,
         tokens_used=final_record.tokens_used,
         cost_usd=final_record.cost_usd,
-        themes_included=doc_section.themes_included,
-        themes_truncated=doc_section.themes_truncated,
+        themes_included=quant.theme_count,
+        themes_truncated=len(summarize_result.themes) - quant.theme_count,
         quotes_validated=quotes_validated,
         reviews_ingested=len(raw_reviews),
         reviews_kept_after_scrub=len(scrubbed_reviews),
