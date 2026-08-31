@@ -1,11 +1,11 @@
 # Weekly Product Review Pulse — Architecture
 
-Status: Draft v1
+Status: Implemented — all 6 phases built and passing (275 tests, `python Phase6-Orchestration-Hardening/scripts/run_full_regression.py`); live-verified end-to-end against real Docs/Drive/Gmail MCP servers, 6 configured products, 3x/week scheduling active
 Companion to: [ProblemStatement.md](./ProblemStatement.md) · See also: implementationPlan.md (phased delivery, exit criteria)
 
 > **Resolved — MCP host**: the project does **not** build its own MCP host/client from scratch; it uses the **official MCP Python SDK** (`pip install mcp`) directly inside its own synchronous orchestrator (`orchestrator/run.py`). The Claude Agent SDK was considered and rejected: its tool-use mechanism requires Claude (the model) to decide when to invoke a tool during a conversation, with no way for application code to call a specific tool with specific arguments deterministically — a mismatch for idempotency-critical delivery, where the orchestrator itself must decide exactly when to call each tool, never an LLM's judgment call. The plain MCP client SDK is the protocol's own standard library — satisfying "run on an existing one" — and lets the orchestrator call tools with zero LLM involvement in that decision. See Phase5-MCP-Delivery/README.md for the full reasoning and Phase5-MCP-Delivery/pulse/mcp/host_adapter.py for the implementation.
 >
-> **Resolved — MCP servers**: [`taylorwilsdon/google_workspace_mcp`](https://github.com/taylorwilsdon/google_workspace_mcp) (community, actively maintained), self-hosted, covering both Docs and Gmail in one server/one OAuth setup. §7 below reflects this server's actual tool set, which required two changes from the original sketch: no named-range read tool (Docs idempotency now checks document content for the heading text, not a named-range lookup) and no draft-creation tool or custom email headers (Gmail idempotency now uses a body-text marker instead of a header, and "draft mode" never calls the server at all rather than creating a real draft).
+> **Resolved — MCP servers**: [`taylorwilsdon/google_workspace_mcp`](https://github.com/taylorwilsdon/google_workspace_mcp) (community, actively maintained), self-hosted, covering Docs, Drive, and Gmail in one server/one OAuth setup (Drive added 2026-08-31, for chart-image delivery — §4a; confirmed live it needed no new OAuth consent). §7 below reflects this server's actual tool set, which required two changes from the original sketch: no named-range read tool (Docs idempotency now checks document content for the heading text, not a named-range lookup) and no draft-creation tool or custom email headers (Gmail idempotency now uses a body-text marker instead of a header, and "draft mode" never calls the server at all rather than creating a real draft).
 
 ---
 
@@ -91,9 +91,13 @@ Key point: the **only** edges that touch Google are `DOCSMCP → GDOC` and `GMAI
 | Reasoning | `analysis/clustering.py` | UMAP reduction + HDBSCAN clustering, cluster scoring/ranking (size × recency) |
 | Reasoning | `analysis/summarize.py` | Per-cluster LLM calls → theme name, description, candidate quotes, action ideas |
 | Reasoning | `analysis/quote_validator.py` | Confirms every candidate quote is a real substring (normalized) of a source review; drops/repairs failures |
-| Output generation | `render/doc_blocks.py` | Builds Google Docs `batchUpdate` request bodies (heading + themes + quotes + actions + "who this helps") |
+| Output generation | `render/doc_blocks.py` | Builds Google Docs `batchUpdate` request bodies for the heading + named range (§5.1) |
 | Output generation | `render/email.py` | Builds Gmail HTML + plain-text teaser referencing the Doc deep link |
-| Human-visible delivery | `delivery/docs_client.py` | Thin wrapper calling **Docs MCP** tools only (no Google SDK) |
+| Output generation | `quant_analysis.py` | Pure computation (no I/O) of a `QuantSnapshot` from reviews + clustering + summarize output: sentiment split (from star rating), star distribution, per-theme volume/sentiment, priority quadrant, and (given a prior week's snapshot) a `WowComparison` — see §4a |
+| Output generation | `quant_store.py` | SQLite-backed persistence of each run's `QuantSnapshot`, keyed `(product, iso_week)`, so the next week's run can compute a real week-over-week delta instead of an estimate — separate from the `RUN` ledger (§6), a different concern (analytical history vs. delivery audit trail) |
+| Output generation | `charts.py` | Renders the report's charts (sentiment, star distribution, theme ranking, priority matrix, week-over-week trend) as PNG bytes via matplotlib (`Agg` backend, headless) — Google Docs has no native chart object, so every chart is an image |
+| Output generation | `cxo_report.py` | Assembles the CXO Customer Voice report from a `QuantSnapshot` (+ optional `WowComparison`) and the LLM's qualitative theme output into an ordered list of text/chart/table blocks, and delivers each block to the Doc via `delivery/docs_client.py` — see §4a |
+| Human-visible delivery | `delivery/docs_client.py` | Thin wrapper calling **Docs MCP** and **Drive MCP** tools only (no Google SDK) — text, tables, and images |
 | Human-visible delivery | `delivery/gmail_client.py` | Thin wrapper calling **Gmail MCP** tools only (no Google SDK) |
 | Orchestration | `orchestrator/run.py` | Sequences the pipeline, owns the run ledger, enforces idempotency and budget limits |
 | Entry points | `cli.py` | `pulse run`, `pulse backfill`, `pulse status` |
@@ -174,6 +178,28 @@ Stages, in order:
 6. **Render** — a single canonical `ReportPulse` object is projected into (a) Google Docs `batchUpdate` requests and (b) an HTML/plain-text email teaser — one source of truth, two renderers.
 7. **Deliver** — Docs MCP append (idempotent via anchor), then Gmail MCP draft/send (idempotent via run key), in that order, since the email needs the Doc's real heading link.
 8. **Record** — the run ledger is updated at each delivery sub-step, not just at the end, so a crash mid-run leaves an accurate partial record rather than silence.
+
+---
+
+## 4a. The CXO Customer Voice report (rendering + delivery detail)
+
+Revised 2026-08-31: the original one-page text narrative (§4 stage 6 as first designed) was replaced with a CXO-level, visually structured report, at the operator's explicit request, so a Senior PM/leadership reader can scan the Doc in under a minute and see comparable, quantified signal rather than prose alone. The pipeline change is additive to §4, not a fork of it — steps 1–5 (ingest → validate) are unchanged; only stage 6 ("Render") and the delivery leg of stage 7 got materially richer.
+
+**What gets computed (`quant_analysis.py`, pure functions, no I/O)**
+- `QuantSnapshot`: total reviews, average rating, sentiment split (1–2★ = negative, 3★ = neutral, 4–5★ = positive — an explicit, documented heuristic, not invented data), star-rating distribution, per-theme `ThemeMetrics` (review count, % of total, sentiment split), and an "issue" count aliased to the negative-sentiment count.
+- Priority quadrant per theme: `high_volume = pct_of_total >= average_theme_volume_pct` crossed with `high_negative = negative_pct >= 50%`, producing Critical / Monitor / Emerging-risk / Low-priority.
+- `WowComparison`: only computed when a prior ISO week's `QuantSnapshot` is found in `quant_store.py`'s SQLite table (keyed `(product, iso_week)`, separate from the `RUN` ledger in §6). Theme-to-theme matching across weeks is best-effort fuzzy name matching (clustering isn't deterministic across independent weekly runs), not a guaranteed identity — theme deltas are labeled `new`/`increasing`/`decreasing`/`stable` accordingly, and top-line metrics (total reviews, % positive/negative) always compare exactly since they don't depend on theme matching.
+
+**What gets rendered (`charts.py`, `cxo_report.py`)**
+- Charts (`charts.py`) are matplotlib PNGs — a modern, restrained SaaS-dashboard palette (dark charcoal text, green/red/amber for positive/negative/watch signal, one blue accent), never 3D, minimal gridlines: a 100%-stacked sentiment bar, a star-rating bar, a theme-volume ranking bar, a priority-matrix scatter (with quadrant background tints), and — when a `WowComparison` exists — a week-over-week trend line chart.
+- `cxo_report.py` assembles the report as an ordered list of typed blocks (text, chart image, table) covering: an executive KPI snapshot, strengths-vs-pain-points cards, a theme×sentiment table (heatmap-shaded by % negative), the priority-matrix chart, week-over-week trend + a recurring/new-issue breakdown (when available), the full per-theme qualitative analysis (description + real quotes + actions, unchanged from the original LLM/validator output — this report layer never re-analyzes or invents content, only computes and displays), CXO takeaway statements (template-generated from the real numbers, not LLM-authored), and a leadership priority (P0/P1/P2) table.
+- Every number in the report traces back to `QuantSnapshot`/`WowComparison`; anything not calculable from real data is rendered as "Not available from source data" rather than estimated.
+
+**How it reaches the Doc (Docs + Drive MCP)**
+- Charts have no native Docs API object — each PNG is uploaded to Drive (`create_drive_file`), made reader-shareable (`set_drive_file_permissions` — the real `insertInlineImage` request needs a publicly-fetchable image even for a file the same account owns), then inserted by Drive file id (`insert_doc_image`). This is why the Docs MCP server connection now also loads Drive tools (§7) — confirmed live that this didn't require new OAuth consent, only widened the tool surface, since the token already carried Drive scope.
+- Tables (Theme×Sentiment, Leadership Focus) are built manually: `insert_table`, then `debug_table_structure` to get each cell's real insertion index, then cells are filled in descending-index order in one batch (inserting into an earlier cell first would shift every later cell's index). The server's own `create_table_with_data` convenience tool was tried and found unreliable (creates the right-shaped table but silently leaves every cell empty) — not used.
+- Cell shading/backgrounds/padding use `update_table_cell_style`; card-style callout boxes (KPI cards, takeaway callouts, per-theme detail cards) use `update_paragraph_style`'s `shading_color`/`border_edges` directly on body paragraphs — no table needed for a single-column box, only for genuinely side-by-side layout (KPI row, two-column strengths/pain-points, any data table).
+- **Known server quirk, workaround in place**: styling many table cells' text from *within the same long-lived MCP session* that built the rest of the document (dozens of prior calls already made) intermittently corrupts the result — colors/sizes bleed across cells that should be independently styled. The confirmed, reliable workaround is a short, separate, freshly-connected session that re-applies table-cell text styling after the main build completes; root cause not fully understood (suspected `google_workspace_mcp` state/consistency issue under a long rapid-fire call sequence, not a Docs API limitation per se — the same operations succeed immediately in a fresh session against the same document). This is currently a manual/scripted step, not yet folded into `cxo_report.py`'s normal automated delivery path.
 
 ---
 
@@ -265,11 +291,22 @@ The `RUN` table **is** the audit log required by the problem statement ("record 
 
 The agent talks to **one unified MCP server**, [`taylorwilsdon/google_workspace_mcp`](https://github.com/taylorwilsdon/google_workspace_mcp) (community, self-hosted), which covers both Docs and Gmail and holds the Google OAuth. The agent connects to it using the **official MCP Python SDK** (`mcp` package) over stdio — see Phase5-MCP-Delivery/pulse/mcp/host_adapter.py. The agent's config references the server's launch command and endpoint, never credentials.
 
-**Google Docs tools used** (real tool names, per the chosen server)
+**Google Docs tools used** (real tool names, verified live against `google_workspace_mcp`)
 | Tool | Purpose |
 |---|---|
-| `get_doc_content` | Idempotency check: does this week's heading text already appear in the document? |
-| `batch_update_doc` | Executes the raw Docs API request objects (insert heading + theme/quote/action content, create the named range) atomically |
+| `get_doc_content` | Idempotency check: does this week's heading text already appear in the document? Also used to read back delivered content for verification. |
+| `inspect_doc_structure` | Real paragraph/table start/end indices — used to locate just-inserted content before styling it (no index math done blind) |
+| `batch_update_doc` | Executes the raw Docs API request objects atomically: `insert_text`, `insert_table`, `insert_page_break`, `update_paragraph_style` (incl. `shading_color`/`border_edges` for card/callout boxes), `format_text`, `update_table_cell_style`, `create_named_range` |
+| `debug_table_structure` | Real per-cell insertion index after `insert_table` — required because `create_table_with_data` (the convenience tool) was found unreliable (§4a) |
+| `insert_doc_image` | Inserts an already-uploaded, shared Drive image (a chart PNG) into the Doc by file id |
+| `update_doc_headers_footers` | Sets the report's footer branding text |
+| `export_doc_to_pdf` | Used for visual QA of the rendered report during development, not part of the delivery path |
+
+**Google Drive tools used** (added 2026-08-31 for chart delivery — §4a; confirmed live that this widened the tool surface without requiring new OAuth consent, since the existing token already carried Drive scope)
+| Tool | Purpose |
+|---|---|
+| `create_drive_file` | Uploads a chart PNG (base64) so it can be referenced by Drive file id |
+| `set_drive_file_permissions` | Makes the uploaded chart reader-shareable — the real Docs `insertInlineImage` request needs a publicly-fetchable image even for a file the same account already owns |
 
 **Gmail tools used**
 | Tool | Purpose |
@@ -277,7 +314,7 @@ The agent talks to **one unified MCP server**, [`taylorwilsdon/google_workspace_
 | `search_gmail_messages` | Idempotency defense-in-depth: search message content for the `[[pulse-run-key:...]]` marker |
 | `send_gmail_message` | Production path, `email_mode: send` only — never called at all in `draft` mode |
 
-Tool names/argument shapes above are best-effort based on the server's published source, not verified against a live instance (no running server/Google OAuth exists in this project's development environment yet).
+All tool names/argument shapes above are verified against a live `google_workspace_mcp` instance (real OAuth, real Docs/Drive/Gmail), not just the server's published source.
 
 The agent never falls back to direct REST calls if the MCP server is unavailable — a failed MCP call is a failed run, retried with backoff, then surfaced as an error in the ledger (`status=FAILED`, `error=<mcp error>`), not silently bypassed.
 
@@ -306,13 +343,13 @@ The agent never falls back to direct REST calls if the MCP server is unavailable
 - **Cadence**: one report per product per ISO week — but each product's trigger is registered **three times a week** (Monday 08:15, Wednesday 08:15, Saturday 09:00 IST; see Phase6-Orchestration-Hardening/scheduling/register_weekly_task.ps1), all invoking the same `pulse run --product <name>`. This is a resilience mechanism, not three separate reports: idempotency stays keyed on `(product, iso_week)` (§5), so whichever of the three triggers fires first and succeeds each week produces that week's report, and the other two find the week already `SUCCEEDED` and no-op (a cheap ledger lookup — no ingestion/LLM/delivery work runs again). The point is surviving the host machine being off, asleep, or unplugged on any one of the three days, not more frequent reporting. Revised 2026-08-31 from the original single-Monday-trigger design at the operator's explicit request, after confirming this doesn't mean three reports.
 - **Backfill**: `pulse backfill --product <name> --week 2026-W30` runs the identical pipeline for a historical ISO week (window is still computed relative to that week's Friday/Sunday boundary, not "today").
 - **Status/audit**: `pulse status --product <name> --week <iso_week>` reads the run ledger and prints doc link + email status without re-running anything.
-- Products are configured, not hardcoded — adding a 6th product is a `products.yaml` entry, not a code change.
+- Products are configured, not hardcoded — Porter was added as the 6th product this way (a `products.yaml` entry with its App Store id, Play Store package, and target Doc id, no code change).
 
 ---
 
 ## 11. Non-goals reflected in the architecture
 
-Per the problem statement, the architecture deliberately does **not** include: a general-purpose Workspace API layer (only the two narrow MCP tool surfaces above), a streaming/BI pipeline (the Doc is the durable artifact; the ledger is operational metadata, not an analytics store), social-media ingestors, or any credential storage for Google OAuth inside the agent (that lives entirely in the MCP servers' own deployment config, outside this repo's scope).
+Per the problem statement, the architecture deliberately does **not** include: a general-purpose Workspace API layer (only the narrow Docs/Drive/Gmail MCP tool surfaces above — Drive is scoped to chart-image upload/sharing only, nothing else), a streaming/BI pipeline (the Doc is the durable artifact; the ledger is operational metadata, and `quant_store.py`'s snapshot history exists only to compute real week-over-week deltas, not as a general analytics store), social-media ingestors, or any credential storage for Google OAuth inside the agent (that lives entirely in the MCP servers' own deployment config, outside this repo's scope).
 
 ---
 
@@ -323,8 +360,9 @@ Per the problem statement, the architecture deliberately does **not** include: a
 | Ingest App Store + Play Store, 8–12wk window | §3 `ingestion/*`, §4 stage 1 |
 | Clustering via UMAP + HDBSCAN, LLM theming | §3 `analysis/*`, §4 stages 3–4 |
 | Quotes validated against real text | §3 `quote_validator.py`, §4 stage 5, §8 |
-| One-page narrative, Docs = system of record | §4 stage 6, §6 `RUN` model |
-| Delivery only via Docs MCP + Gmail MCP | §2, §7 |
+| CXO Customer Voice report, Docs = system of record | §4 stage 6, §4a, §6 `RUN` model |
+| Real quantitative metrics, week-over-week trend, no invented numbers | §4a `quant_analysis.py`, `quant_store.py` |
+| Delivery only via Docs MCP + Drive MCP (scoped) + Gmail MCP | §2, §7 |
 | No direct Docs/Gmail REST calls, no stored OAuth | §2, §7, §11 |
 | Idempotent Doc section | §5.1 |
 | Idempotent email send | §5.2 |

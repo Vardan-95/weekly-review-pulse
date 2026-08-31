@@ -23,3 +23,6 @@ local-mcp-server/*.json
 # OS/editor noise
 .DS_Store
 Thumbs.db
+
+# Claude Code's own session/task state - tooling, not project source.
+.claude/

@@ -41,7 +41,7 @@ Phase 4 can start from a hand-authored fixture `ReportPulse` in parallel with th
 
 **Tasks**
 - Repo/package structure matching the module map (§3)
-- `config/products.yaml` schema + loader/validator, pre-populated with the 5 initial products (INDMoney, Groww, PowerUp Money, Wealth Monitor, Kuvera)
+- `config/products.yaml` schema + loader/validator, pre-populated with the initial products — later grown to all 6 (INDMoney, Groww, PowerUp Money, Wealth Monitor, Kuvera, Porter) purely via config, no code change
 - `config/environments.yaml` schema (`email_mode`, `max_tokens_per_run`, `max_cost_usd_per_run`, ingestion window weeks)
 - Run ledger schema (§6 `RUN` table) + SQLite init/migration
 - `cli.py` skeleton: `pulse run`, `pulse backfill`, `pulse status` — argument parsing wired to a no-op orchestrator stub
@@ -49,7 +49,7 @@ Phase 4 can start from a hand-authored fixture `ReportPulse` in parallel with th
 
 **Exit criteria**
 - [ ] `pulse status --product groww --week 2026-W30` runs against an empty ledger and reports "no run found"
-- [ ] Config loader rejects a malformed/unknown product with a clear error, accepts all 5 real products
+- [x] Config loader rejects a malformed/unknown product with a clear error, accepts all 6 real products
 - [ ] Ledger round-trip test: insert a `RUN` row, read it back with all fields intact
 
 **Out of scope**: any real ingestion, clustering, LLM, or MCP call.
@@ -74,10 +74,10 @@ Phase 4 can start from a hand-authored fixture `ReportPulse` in parallel with th
 - Persist scrubbed reviews to the `REVIEW` table for the run
 
 **Exit criteria**
-- [ ] For a configured product, ingestion returns reviews within the configured window, deduplicated by `(source, review_id)`
-- [ ] 100% of a labeled PII fixture set has emails/phones/card-like numbers removed before leaving the scrubber
-- [ ] Labeled injection-attempt fixtures are flagged and excluded from quote-eligibility (verified by test), while still contributing to theme signal
-- [ ] Labeled non-English and Hinglish fixtures are dropped before persistence; emoji characters are stripped from kept English review text without altering the surrounding words
+- [x] For a configured product, ingestion returns reviews within the configured window, deduplicated by `(source, review_id)`
+- [x] 100% of a labeled PII fixture set has emails/phones/card-like numbers removed before leaving the scrubber
+- [x] Labeled injection-attempt fixtures are flagged and excluded from quote-eligibility (verified by test), while still contributing to theme signal
+- [x] Labeled non-English and Hinglish fixtures are dropped before persistence; emoji characters are stripped from kept English review text without altering the surrounding words
 
 **Out of scope**: embeddings, clustering, LLM calls, rendering, delivery.
 
@@ -100,9 +100,9 @@ Phase 4 can start from a hand-authored fixture `ReportPulse` in parallel with th
 - Golden-set evaluation harness (see [Evaluation/Phase3-Reasoning.md](./Evaluation/Phase3-Reasoning.md))
 
 **Exit criteria**
-- [ ] On a fixed, seeded fixture corpus, clustering produces stable cluster counts across repeated runs
-- [ ] 100% of quotes appearing in the final theme list pass validation against source review text
-- [ ] With a deliberately low budget ceiling, summarization truncates gracefully (highest-ranked clusters first) without crashing, and logs accurate token/cost usage
+- [x] On a fixed, seeded fixture corpus, clustering produces stable cluster counts across repeated runs
+- [x] 100% of quotes appearing in the final theme list pass validation against source review text
+- [x] With a deliberately low budget ceiling, summarization truncates gracefully (highest-ranked clusters first) without crashing, and logs accurate token/cost usage
 
 **Out of scope**: Doc/email rendering, MCP delivery.
 
@@ -114,22 +114,24 @@ Phase 4 can start from a hand-authored fixture `ReportPulse` in parallel with th
 
 **Goal**: project a canonical `ReportPulse` into Google Docs `batchUpdate` blocks and a Gmail HTML/text teaser — no live MCP calls, output inspectable as local files.
 
-**Architecture sections covered**: §3 (`render/*`), §4 stage 6
+**Status**: as originally scoped, implemented and superseded in one respect — the plain-text one-page Doc renderer it built was later replaced by the CXO Customer Voice report (`quant_analysis.py` + `charts.py` + `cxo_report.py`, delivered via Phase 5's docs_client, table/image methods added 2026-08-31 — see Architecture.md §4a). `render/email.py`'s HTML/text teaser is unchanged. This phase's `ReportPulse` schema and golden-file testing approach carried forward as the template for the CXO modules' own test suites.
+
+**Architecture sections covered**: §3 (`render/*`), §4 stage 6, §4a
 
 **Tasks**
 - `ReportPulse` canonical schema (themes, quotes, actions, period, "who this helps")
-- `render/doc_blocks.py` — `batchUpdate` request JSON (heading + content) plus named-range creation request (§5.1)
+- `render/doc_blocks.py` — `batchUpdate` request JSON (heading + named-range creation request, §5.1) — now used only for the heading; body content is the CXO report (§4a)
 - `render/email.py` — HTML + plain-text teaser with a deep-link placeholder
 - Golden-file tests: fixed `ReportPulse` in → approved rendered fixture out
 
 **Exit criteria**
-- [ ] Rendered Doc block JSON is structurally valid against the Docs API `batchUpdate` request shape (offline schema check)
-- [ ] Email teaser stays within a defined brevity budget and contains exactly one well-formed deep-link placeholder
-- [ ] Rendering is deterministic: identical `ReportPulse` input produces byte-identical output
+- [x] Rendered Doc block JSON is structurally valid against the Docs API `batchUpdate` request shape (offline schema check)
+- [x] Email teaser stays within a defined brevity budget and contains exactly one well-formed deep-link placeholder
+- [x] Rendering is deterministic: identical `ReportPulse` input produces byte-identical output
 
 **Out of scope**: any real MCP/Docs/Gmail call.
 
-**Requirement traceability**: one-page narrative; Doc = system of record; email teaser + link, not a duplicate report.
+**Requirement traceability**: CXO Customer Voice report; Doc = system of record; email teaser + link, not a duplicate report.
 
 ---
 
@@ -164,7 +166,7 @@ Phase 4 can start from a hand-authored fixture `ReportPulse` in parallel with th
 
 **Goal**: assemble the full pipeline behind the CLI, wire weekly scheduling, and harden for production use.
 
-**Status**: Implemented — see Phase6-Orchestration-Hardening/README.md for the namespace-collision fix that lets this phase reuse Phases 1-5's code unmodified, the ThemeSummary→Theme/Quote bridging, and why the Doc-section renderer had to be rewritten (Phase 4's targeted the wrong Docs API shape — see Phase 5's README). 218 tests pass across all six phases (`python Phase6-Orchestration-Hardening/scripts/run_full_regression.py`).
+**Status**: Implemented and in production — see Phase6-Orchestration-Hardening/README.md for the namespace-collision fix that lets this phase reuse Phases 1-5's code unmodified, the ThemeSummary→Theme/Quote bridging, and why the Doc-section renderer had to be rewritten (Phase 4's targeted the wrong Docs API shape — see Phase 5's README). 275 tests pass across all six phases (`python Phase6-Orchestration-Hardening/scripts/run_full_regression.py`). Running live, 6 products, scheduled 3x/week (§10). Since the initial implementation: added the 6th product (Porter); moved scheduling from a single Monday trigger to three weekly triggers for resilience (Architecture.md §10); replaced the plain-text Doc section with the CXO Customer Voice report — quantitative snapshots, charts, tables, priority matrix, leadership focus (Architecture.md §4a); added a README.md at the repo root.
 
 **Architecture sections covered**: §4 (full sequence), §9, §10, §12 (traceability walkthrough)
 
@@ -176,6 +178,10 @@ Phase 4 can start from a hand-authored fixture `ReportPulse` in parallel with th
 - Observability: structured logs + per-run metrics (tokens, cost, cluster count, quotes validated/rejected, MCP latencies)
 - Security hardening pass: pre-publish PII re-check (§8), prompt-injection fixture regression suite
 - Draft → send promotion checklist per product/environment
+- Weekly-cadence resilience: 3x/week trigger registration (Mon/Wed/Sat), idempotency-gated so it stays one report per week (§10)
+- CXO Customer Voice report (§4a): `quant_analysis.py`, `quant_store.py`, `charts.py`, `cxo_report.py`; Drive MCP tool support (chart image upload/sharing) and table/image delivery methods added to Phase 5's `docs_client.py`
+- 6th product (Porter) onboarded via `products.yaml`
+- Repo root `README.md` (project overview, status, run/test instructions)
 
 **Exit criteria**
 - [x] `pulse run --product <p> --week <w>` against a real/sandbox product produces a Doc section + draft/email and a complete ledger row, unattended
