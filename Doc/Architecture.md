@@ -303,7 +303,7 @@ The agent never falls back to direct REST calls if the MCP server is unavailable
 
 ## 10. Scheduling & operation
 
-- **Cadence**: one external cron trigger per product, Monday 07:00 IST, invoking `pulse run --product <name> --week <current-iso-week>`.
+- **Cadence**: one report per product per ISO week — but each product's trigger is registered **three times a week** (Monday 08:15, Wednesday 08:15, Saturday 09:00 IST; see Phase6-Orchestration-Hardening/scheduling/register_weekly_task.ps1), all invoking the same `pulse run --product <name>`. This is a resilience mechanism, not three separate reports: idempotency stays keyed on `(product, iso_week)` (§5), so whichever of the three triggers fires first and succeeds each week produces that week's report, and the other two find the week already `SUCCEEDED` and no-op (a cheap ledger lookup — no ingestion/LLM/delivery work runs again). The point is surviving the host machine being off, asleep, or unplugged on any one of the three days, not more frequent reporting. Revised 2026-08-31 from the original single-Monday-trigger design at the operator's explicit request, after confirming this doesn't mean three reports.
 - **Backfill**: `pulse backfill --product <name> --week 2026-W30` runs the identical pipeline for a historical ISO week (window is still computed relative to that week's Friday/Sunday boundary, not "today").
 - **Status/audit**: `pulse status --product <name> --week <iso_week>` reads the run ledger and prints doc link + email status without re-running anything.
 - Products are configured, not hardcoded — adding a 6th product is a `products.yaml` entry, not a code change.

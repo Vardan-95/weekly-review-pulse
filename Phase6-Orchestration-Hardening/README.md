@@ -167,26 +167,67 @@ the Docs MCP server's `create_doc` tool). Every product's `stakeholders`
 currently defaults to the project owner's own address — update per
 product before sending to anyone else.
 
-## Scheduling (live, 2026-08-30)
+## Scheduling (live, updated 2026-08-31)
 
 `scheduling/register_weekly_task.ps1` is **registered** on this machine —
 6 Windows Scheduled Tasks (`PulseWeeklyRun-<Product>`), one per product,
-firing every **Saturday**, staggered 15 minutes apart starting **07:00
-local time** (confirmed this machine's timezone is IST, so that's genuinely
-07:00 IST, not just local-time-that-happens-to-look-right). `--env
-production`, so these send real email, unattended, every week — that was
-an explicit choice, not a default.
+each with **three weekly triggers**: Monday 08:15, Wednesday 08:15, and
+Saturday 09:00, staggered 15 minutes apart per product within each day
+(confirmed this machine's timezone is genuinely India Standard Time, so
+these are real IST times, not just local-time-that-happens-to-look-right).
+`--env production`, so these send real email, unattended — an explicit
+choice, not a default.
+
+**Three triggers a week ≠ three reports a week.** Idempotency stays keyed
+on `(product, iso_week)`, and Monday/Wednesday/Saturday of the same
+calendar week all fall in the same ISO week — so whichever trigger fires
+first and succeeds produces that week's one report; the other two find it
+already `SUCCEEDED` and no-op (a cheap ledger lookup, no re-ingestion, no
+re-summarization, no re-delivery). The three triggers exist purely for
+resilience — the machine being off, asleep, or unplugged on any single one
+of those three mornings doesn't cost the week entirely. This was an
+explicit design choice confirmed with the operator before implementing
+(the alternative — genuinely separate reports per trigger — would need
+idempotency keyed on run-date instead of ISO week, a different Doc-section
+naming scheme, and dropping the ledger's `UNIQUE(product, iso_week)`
+constraint; deliberately not what's implemented here).
+
+**Power**: tasks run regardless of AC power or battery state
+(`AllowStartIfOnBatteries` + `DontStopIfGoingOnBatteries`) — explicitly
+enabled since this runs on a laptop that isn't always plugged in.
+
+**Logon**: tasks use the ordinary `Interactive` logon type — they only
+fire while the operator is actually logged into Windows on this machine
+(a locked screen is fine; being fully signed out, or a restart nobody's
+logged back into, is not). The script also supports `-RunEvenWhenLoggedOff
+$true` for `Register-ScheduledTask`'s password-based logon type instead,
+which removes that requirement — not used here because it needs the
+Windows account password entered interactively (masked, never accepted as
+a script parameter or logged) by whoever runs the script themselves, and
+the operator explicitly chose to keep the machine logged in instead of
+setting that up.
+
+Neither of the above removes the one remaining hard requirement: **the
+machine itself must be powered on and awake** at trigger time. Windows
+Task Scheduler cannot wake a shut-down or sleeping machine on its own
+without hardware wake-timer support, which this script does not attempt
+to configure (`WakeToRun` stays `False`). Genuinely surviving the machine
+being off entirely would need always-on infrastructure (a cloud VM, or a
+machine that's never shut down) instead of a personal laptop — a real
+infrastructure tradeoff, not something fixable in this script.
 
 Manual triggering keeps working exactly as before and doesn't conflict
 with the schedule — `pulse run --product <name>` any time; the ledger's
 own idempotency (not anything schedule-aware) is what stops a manual run
-and that week's Saturday trigger from double-delivering, whichever fires
-first.
+and a scheduled trigger for the same `(product, week)` from
+double-delivering, whichever fires first.
 
 ```
-Get-ScheduledTask -TaskName 'PulseWeeklyRun-*'                # verify all 6
-Start-ScheduledTask -TaskName 'PulseWeeklyRun-Groww'           # test-fire one now
-Get-ScheduledTask -TaskName 'PulseWeeklyRun-*' | Unregister-ScheduledTask -Confirm:$false  # remove all
+Get-ScheduledTask -TaskName 'PulseWeeklyRun-*'                          # verify all 6
+Start-ScheduledTask -TaskName 'PulseWeeklyRun-Groww'                     # test-fire one now
+Get-ScheduledTask -TaskName 'PulseWeeklyRun-*' | Disable-ScheduledTask   # pause all (keep config)
+Get-ScheduledTask -TaskName 'PulseWeeklyRun-*' | Enable-ScheduledTask    # resume
+Get-ScheduledTask -TaskName 'PulseWeeklyRun-*' | Unregister-ScheduledTask -Confirm:$false  # remove all permanently
 ```
 
 Each run's full structured-log output is appended to
